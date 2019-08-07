@@ -216,6 +216,12 @@ func (a *API) Store(ctx context.Context, data io.Reader, size int64, toEncrypt b
 	return a.fileStore.Store(ctx, data, size, toEncrypt)
 }
 
+// Append wraps the Append API call of the embedded FileStore
+func (a *API) Append(ctx context.Context, fileToAppend storage.Address, data io.Reader, size int64, toEncrypt bool) (addr storage.Address, wait func(ctx context.Context) error, err error) {
+	log.Debug("api.store", "size", size)
+	return a.fileStore.Append(ctx, fileToAppend, data, size, toEncrypt)
+}
+
 // Resolve a name into a content-addressed hash
 // where address could be an ENS name, or a content addressed hash
 func (a *API) Resolve(ctx context.Context, address string) (storage.Address, error) {

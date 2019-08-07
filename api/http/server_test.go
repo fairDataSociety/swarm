@@ -67,6 +67,70 @@ func newTestSigner() (*feed.GenericSigner, error) {
 	return feed.NewGenericSigner(privKey), nil
 }
 
+func TestBZZRawAppend(t *testing.T) {
+	// Initialize Swarm test server
+	srv := NewTestSwarmServer(t, serverFunc, nil)
+	defer srv.Close()
+
+	sizes := []int{1, 1, 1, 4095, 4096, 4097, 1, 1, 1, 123456, 2345678, 2345678, 524288}
+	appendSizes := []int{4095, 4096, 4097, 1, 1, 1, 8191, 8192, 8193, 9000, 3000, 5000, 10}
+
+	for i := range sizes {
+		dataSize:= sizes[i]
+		appendSize := appendSizes[i]
+
+		data := testutil.RandomBytes(1, dataSize)
+		getResp, err := http.Post(fmt.Sprintf("%s/bzz-raw:/", srv.URL), "text/plain", bytes.NewReader([]byte(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer getResp.Body.Close()
+		if getResp.StatusCode != http.StatusOK {
+			t.Fatalf("err %s", getResp.Status)
+		}
+		rootHash, err := ioutil.ReadAll(getResp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Append new data to the uploaded file
+		dataToAppend := testutil.RandomBytes(1, appendSize)
+		appendResp, err := http.Post(fmt.Sprintf("%s/bzz-append:/%s", srv.URL, string(rootHash)), "text/plain",
+			bytes.NewReader([]byte(dataToAppend)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer appendResp.Body.Close()
+		if appendResp.StatusCode != http.StatusOK {
+			t.Fatalf("err %s", appendResp.Status)
+		}
+		appendedHash, err := ioutil.ReadAll(appendResp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Download the file and see if the contents is appended
+		testRawUrl := fmt.Sprintf("%s/bzz-raw:/%s", srv.URL, string(appendedHash))
+		getResp, err = http.Get(testRawUrl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer getResp.Body.Close()
+		if getResp.StatusCode != http.StatusOK {
+			t.Fatalf("err %s", getResp.Status)
+		}
+		rcvdContents, err := ioutil.ReadAll(getResp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		actualContents := append(data, dataToAppend...)
+		if !bytes.Equal(actualContents, rcvdContents) {
+			t.Fatalf("contents mismatch, expected length '%d', got length '%d'", len(actualContents), len(rcvdContents))
+		}
+	}
+}
+
 // Test the transparent resolving of feed updates with bzz:// scheme
 //
 // First upload data to bzz:, and store the Swarm hash to the resulting manifest in a feed update.

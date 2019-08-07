@@ -166,8 +166,8 @@ func TestSha3ForCorrectness(t *testing.T) {
 }
 
 func TestDataAppend(t *testing.T) {
-	sizes := []int{1, 1, 1, 4095, 4096, 4097, 1, 1, 1, 123456, 2345678, 2345678}
-	appendSizes := []int{4095, 4096, 4097, 1, 1, 1, 8191, 8192, 8193, 9000, 3000, 5000}
+	sizes := []int{1, 1, 1, 4095, 4096, 4097, 1, 1, 1, 123456, 2345678, 2345678, 10000, 524288}
+	appendSizes := []int{4095, 4096, 4097, 1, 1, 1, 8191, 8192, 8193, 9000, 3000, 5000, 50000, 10}
 
 	tester := &chunkerTester{t: t}
 	for i := range sizes {

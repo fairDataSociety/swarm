@@ -22,6 +22,7 @@ package http
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,6 +128,12 @@ func NewServer(api *api.API, corsString string) *Server {
 		),
 		"POST": Adapt(
 			http.HandlerFunc(server.HandlePostRaw),
+			defaultPostMiddlewares...,
+		),
+	})
+	mux.Handle("/bzz-append:/", methodHandler{
+		"POST": Adapt(
+			http.HandlerFunc(server.HandlePostRawAppend),
 			defaultPostMiddlewares...,
 		),
 	})
@@ -285,6 +292,73 @@ func (s *Server) HandlePostRaw(w http.ResponseWriter, r *http.Request) {
 
 	log.Debug("stored content", "ruid", ruid, "key", addr)
 
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, addr)
+}
+
+// HandlePostRawAppend handles a POST request to a raw bzz-raw-append:/ URI, stores the request
+// Appends the request body to a raw swarm file  and returns the resulting storage address as a
+// text/plain response
+func (s *Server) HandlePostRawAppend(w http.ResponseWriter, r *http.Request) {
+	ruid := GetRUID(r.Context())
+	log.Debug("handle.post.raw.append", "ruid", ruid)
+
+	tagUid := sctx.GetTag(r.Context())
+	tag, err := s.api.Tags.Get(tagUid)
+	if err != nil {
+		log.Error("handle post raw got an error retrieving tag for DoneSplit", "tagUid", tagUid, "err", err)
+	}
+
+	postRawCount.Inc(1)
+
+	toEncrypt := false
+	uri := GetURI(r.Context())
+	if uri.Addr == "encrypt" {
+		toEncrypt = true
+	}
+
+	if uri.Path != "" {
+		postRawFail.Inc(1)
+		respondError(w, r, "raw POST request cannot contain a path", http.StatusBadRequest)
+		return
+	}
+
+	if uri.Addr == "" {
+		postRawFail.Inc(1)
+		respondError(w, r, "raw append POST request should contain address", http.StatusBadRequest)
+		return
+	}
+
+	if uri.Addr == "encrypt" {
+		postRawFail.Inc(1)
+		respondError(w, r, "raw POST request addr dont support \"encrypt\"", http.StatusBadRequest)
+		return
+	}
+
+	if r.Header.Get("Content-Length") == "" {
+		postRawFail.Inc(1)
+		respondError(w, r, "missing Content-Length header in request", http.StatusBadRequest)
+		return
+	}
+
+	rcvdAddr, err := hex.DecodeString(uri.Addr)
+	if err != nil {
+		postRawFail.Inc(1)
+		respondError(w, r, "error decoding address", http.StatusBadRequest)
+		return
+	}
+	addr, wait, err := s.api.Append(r.Context(), rcvdAddr, r.Body, r.ContentLength, toEncrypt)
+	if err != nil {
+		postRawFail.Inc(1)
+		respondError(w, r, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	wait(r.Context())
+	tag.DoneSplit(addr)
+
+	log.Debug("stored content", "ruid", ruid, "key", addr)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, addr)

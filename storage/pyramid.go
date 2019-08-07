@@ -399,12 +399,15 @@ func (pc *PyramidChunker) prepareChunks(ctx context.Context, isAppend bool) {
 		lastIndex := len(pc.chunkLevel[0]) - 1
 		ent := pc.chunkLevel[0][lastIndex]
 
+		entendedChunk := make([]byte, pc.chunkSize+8)
+		copy(entendedChunk, ent.chunk)
+
 		if ent.branchCount < pc.branches {
 			parent = &TreeEntry{
 				level:         0,
 				branchCount:   ent.branchCount,
 				subtreeSize:   ent.subtreeSize,
-				chunk:         ent.chunk,
+				chunk:         entendedChunk,
 				key:           ent.key,
 				index:         lastIndex,
 				updatePending: true,
@@ -494,7 +497,7 @@ func (pc *PyramidChunker) prepareChunks(ctx context.Context, isAppend bool) {
 				if parent.branchCount <= 1 {
 					chunkWG.Wait()
 
-					if isAppend || pc.depth() == 0 {
+					if pc.depth() == 0 {
 						// No need to build the tree if the depth is 0
 						// or we are appending.
 						// Just use the last key.
@@ -631,8 +634,10 @@ func (pc *PyramidChunker) buildTree(isAppend bool, ent *TreeEntry, chunkWG *sync
 
 		}
 
+		// Wait for all the tree chunks to be processed
+		chunkWG.Wait()
+
 		if !isAppend {
-			chunkWG.Wait()
 			if compress {
 				pc.chunkLevel[lvl] = nil
 			}
